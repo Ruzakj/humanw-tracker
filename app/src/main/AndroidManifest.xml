@@ -11,7 +11,7 @@
         android:allowBackup="true"
         android:label="HumanW Maps"
         android:supportsRtl="true"
-        android:theme="@style/Theme.HumanWMaps">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity
             android:name=".MainActivity"
