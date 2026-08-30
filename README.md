@@ -1,32 +1,77 @@
 # HumanW Maps
 
-Android offline field-navigation app inspired by GeoPDF/Avenza-style workflows.
+HumanW Maps is an **offline-only Android field-navigation app** built around GeoPDF, local GNSS/GPS tracking, and on-device storage.
 
-## MVP
+## Offline guarantee
 
-- Import PDF/GeoPDF from Android Storage Access Framework
-- Offline first-page PDF rendering
-- Live GPS readout
+The installed app is designed to work with airplane mode enabled after the map files are already on the device.
+
+Runtime rules:
+
+- No `android.permission.INTERNET`
+- No `ACCESS_NETWORK_STATE`
+- No online basemap or tile server
+- No cloud account, API key, telemetry, analytics, ads, or remote database
+- GeoPDF parsing and rendering happen on-device
+- GPS/GNSS position comes from the Android location subsystem
+- Tracks, waypoints, settings, and exports stay in local storage
+- CI rejects forbidden network permissions and common runtime networking/map SDK dependencies
+
+Build-time dependency downloads from Maven/Gradle are allowed; this does not create a runtime internet dependency in the APK.
+
+## Current MVP
+
+- Import PDF/GeoPDF using Android Storage Access Framework
+- Offline PDF rendering
+- GeoPDF metadata parsing (`/VP`, `/Measure`, `/GPTS`, `/LPTS`, `/BBox`)
+- WGS84 GPS-to-page transform for supported geospatial PDFs
+- Live GPS marker overlay
+- Pinch zoom and pan
+- Live latitude, longitude, accuracy, altitude, and speed
 - Foreground/background track recording
-- CSV track persistence per session
-- Simple field-oriented Compose UI
+- Incremental CSV track persistence per session
+
+## Offline data flow
+
+```text
+Local GeoPDF/PDF
+      ↓
+Android Storage Access Framework
+      ↓
+PDFBox + PdfRenderer (on-device)
+      ↓
+GeoPDF coordinate transform
+      ↑
+Android GNSS/GPS
+      ↓
+TrackingService
+      ↓
+Local track files / future local database
+```
 
 ## Next milestones
 
-1. Parse GeoPDF geospatial dictionaries (`/VP`, `/Measure`, GPTS/LPTS) and CRS metadata.
-2. Map WGS84 GPS coordinates into PDF page coordinates.
-3. Multi-page/tiled PDF rendering with pinch/zoom/pan.
-4. Waypoints, measurements, layers and track history.
-5. GPX/KML/GeoJSON export.
-6. Elevation, gradient, lean angle, G-force and ride replay.
+1. Persistent map library: copy imported GeoPDF files into app-managed local storage.
+2. Live track polyline over the GeoPDF and follow-GPS mode.
+3. Waypoints, notes, categories, and locally stored geotagged photos.
+4. Distance/area measurement and offline layers.
+5. Local track/history database with crash-safe recovery.
+6. GPX/KML/GeoJSON/CSV import/export using the Android document picker.
+7. Offline elevation/gradient from recorded GNSS altitude; optional local DEM support later.
+8. Compass, lean angle, G-force, acceleration timer, and ride replay.
+9. Proper CRS projection support for GeoPDFs that are not directly expressed in WGS84 geographic coordinates.
 
 ## Stack
 
 - Kotlin
 - Jetpack Compose
 - Android PdfRenderer
-- Android LocationManager
+- PDFBox Android
+- Android LocationManager / GNSS
 - Foreground location service
+- Local Android storage
 - AGP 9.3 / compileSdk 37
 
-> Important: the current MVP renders PDFs and records GPS, but does **not** yet georeference GPS on top of a GeoPDF. That requires parsing the GeoPDF coordinate metadata and applying its transformation correctly.
+## GPS note
+
+GNSS itself does not require mobile data or Wi-Fi. With no network assistance, a cold GPS fix can take longer depending on the device, sky visibility, and satellite data already cached by Android. Once a fix is available, HumanW Maps does not require internet connectivity for navigation or recording.
