@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -51,7 +52,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.ric.humanwmaps.geopdf.GeoPdfMetadata
@@ -59,7 +59,6 @@ import com.ric.humanwmaps.geopdf.GeoPdfParser
 import com.ric.humanwmaps.tracking.TrackingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,6 +73,7 @@ private fun HumanWApp() {
     var pdfUri by remember { mutableStateOf<Uri?>(null) }
     var tracking by remember { mutableStateOf(false) }
     var location by remember { mutableStateOf<Location?>(null) }
+    var permissionEpoch by remember { mutableIntStateOf(0) }
 
     val openPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -87,12 +87,13 @@ private fun HumanWApp() {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val allowed = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (allowed) {
+            permissionEpoch++
             ContextCompat.startForegroundService(context, Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_START))
             tracking = true
         }
     }
 
-    LiveLocationEffect { location = it }
+    LiveLocationEffect(permissionEpoch) { location = it }
 
     Scaffold { padding ->
         Column(
@@ -111,6 +112,7 @@ private fun HumanWApp() {
                         context.startService(Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_STOP))
                         tracking = false
                     } else if (hasLocationPermission(context)) {
+                        permissionEpoch++
                         ContextCompat.startForegroundService(context, Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_START))
                         tracking = true
                     } else {
@@ -157,9 +159,10 @@ private fun GeoPdfMap(uri: Uri, location: Location?) {
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            when {
-                bitmap == null -> Box(Modifier.fillMaxWidth().size(360.dp), contentAlignment = Alignment.Center) { Text("Rendering map…") }
-                else -> ZoomableMap(bitmap!!, metadata, location)
+            if (bitmap == null) {
+                Box(Modifier.fillMaxWidth().size(360.dp), contentAlignment = Alignment.Center) { Text("Rendering map…") }
+            } else {
+                ZoomableMap(bitmap!!, metadata, location)
             }
             Text(
                 when {
@@ -180,22 +183,17 @@ private fun ZoomableMap(bitmap: Bitmap, metadata: GeoPdfMetadata?, location: Loc
     var width by remember { mutableFloatStateOf(1f) }
     var height by remember { mutableFloatStateOf(1f) }
     val marker = if (metadata != null && location != null) metadata.gpsToPageNormalized(location.latitude, location.longitude) else null
-    val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer { clip = true }
-    ) {
+    Box(modifier = Modifier.fillMaxWidth().graphicsLayer { clip = true }) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(Modifier.graphicsLayer {
+                .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     translationX = tx
                     translationY = ty
-                })
+                }
                 .pointerInput(Unit) {
                     detectTransformGestures { _, pan, zoom, _ ->
                         scale = (scale * zoom).coerceIn(1f, 6f)
@@ -215,7 +213,6 @@ private fun ZoomableMap(bitmap: Bitmap, metadata: GeoPdfMetadata?, location: Loc
                 if (nx in -0.2f..1.2f && ny in -0.2f..1.2f) {
                     Box(
                         modifier = Modifier
-                            .padding(0.dp)
                             .size(18.dp)
                             .background(MaterialTheme.colorScheme.primary, CircleShape)
                             .graphicsLayer {
@@ -241,13 +238,17 @@ private fun renderFirstPage(context: Context, uri: Uri): Bitmap? {
                 }
             }
         }
-    } catch (_: Exception) { null } finally { runCatching { pfd?.close() } }
+    } catch (_: Exception) {
+        null
+    } finally {
+        runCatching { pfd?.close() }
+    }
 }
 
 @Composable
-private fun LiveLocationEffect(onLocation: (Location) -> Unit) {
+private fun LiveLocationEffect(permissionEpoch: Int, onLocation: (Location) -> Unit) {
     val context = LocalContext.current
-    DisposableEffect(Unit) {
+    DisposableEffect(permissionEpoch) {
         if (!hasLocationPermission(context)) return@DisposableEffect onDispose { }
         val manager = context.getSystemService(LocationManager::class.java)
         val listener = LocationListener { onLocation(it) }
