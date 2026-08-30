@@ -18,6 +18,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+
+      - name: Enforce offline-only runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --fixed-strings 'android.permission.INTERNET' app/src; then
+            echo 'ERROR: HumanW Maps is offline-only. INTERNET permission is forbidden.'
+            exit 1
+          fi
+          if grep -R --line-number --fixed-strings 'android.permission.ACCESS_NETWORK_STATE' app/src; then
+            echo 'ERROR: HumanW Maps is offline-only. ACCESS_NETWORK_STATE permission is forbidden.'
+            exit 1
+          fi
+          if grep -R -E --line-number 'retrofit|okhttp|ktor-client|firebase|play-services-maps|mapbox|maplibre' app/build.gradle.kts gradle/libs.versions.toml 2>/dev/null; then
+            echo 'ERROR: Runtime networking / online map dependency detected.'
+            exit 1
+          fi
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
